@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Suporte TI - Novacap</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; display: flex; justify-content: center; }
+        .chat-container { width: 400px; background: white; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); display: flex; flex-direction: column; overflow: hidden; height: 600px; }
+        .chat-header { background: #0056b3; color: white; padding: 15px; text-align: center; font-weight: bold; }
+        .chat-messages { flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; background: #e5ddd5; }
+        .message { padding: 8px 12px; border-radius: 8px; max-width: 75%; font-size: 14px; line-height: 1.4; }
+        .message.user { background: #dcf8c6; align-self: flex-end; }
+        .message.bot { background: white; align-self: flex-start; }
+        .message.tech { background: #d1ecf1; color: #0c5460; align-self: flex-start; border-left: 4px solid #17a2b8; font-weight: 500; }
+        .chat-input-area { padding: 10px; background: #f0f0f0; display: flex; gap: 8px; }
+        .chat-input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 20px; outline: none; font-size: 14px; }
+        .btn-enviar { background: #0056b3; color: white; border: none; padding: 0 15px; border-radius: 20px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">🤖 TI NOVACAP - Pré-Suporte</div>
+        <div class="chat-messages" id="chat-box">
+            <div class="message bot">Olá! Sou o assistente virtual da Novacap. Descreva seu problema técnico de forma simples.</div>
+        </div>
+        <div class="chat-input-area">
+            <input type="text" id="msg-input" class="chat-input" placeholder="Digite sua mensagem..." onkeypress="if(event.key==='Enter') enviarMensagem()">
+            <button class="btn-enviar" onclick="enviarMensagem()">Enviar</button>
+        </div>
+    </div>
+
+        <script>
+        let ipUsuario = "127.0.0.1";
+        let escutandoHumano = false;
+
+        function adicionarBalao(texto, tipo) {
+            const box = document.getElementById("chat-box");
+            const div = document.createElement("div");
+            div.className = `message ${tipo}`;
+            div.innerText = texto;
+            box.appendChild(div);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        async function enviarMensagem() {
+            const input = document.getElementById("msg-input");
+            const texto = input.value.trim();
+            if (!texto) return;
+            adicionarBalao(texto, "user");
+            input.value = "";
+            try {
+                const res = await fetch("http://localhost:5000/api/chat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ mensagem: texto, ip: ipUsuario })
+                });
+                const dados = await res.json();
+                if (dados.resposta) { adicionarBalao(dados.resposta, "bot"); }
+                if (dados.transferir && !escutandoHumano) { escutandoHumano = true; ativarPollingSuporte(); }
+            } catch (err) { adicionarBalao("Erro ao conectar ao servidor.", "bot"); }
+        }
+
+        function ativarPollingSuporte() {
+            setInterval(async () => {
+                try {
+                    const res = await fetch("http://localhost:5000/api/chat/atualizar", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ ip: ipUsuario })
+                    });
+                    const dados = await res.json();
+                    if (dados.status === "Em Atendimento Humano" && dados.historico) {
+                        const box = document.getElementById("chat-box");
+                        box.innerHTML = "";
+                        const linhas = dados.historico.split("\n");
+                        
+                        // CORREÇÃO AQUI: Organização das chaves do if/else
+                        linhas.forEach(linha => {
+                            if (linha.startsWith("Usuário:")) {
+                                adicionarBalao(linha.replace("Usuário:", ""), "user");
+                            } else if (linha.startsWith("IA:")) {
+                                adicionarBalao(linha.replace("IA:", ""), "bot");
+                            } else if (linha.includes("Técnico:") || linha.includes("Suporte Técnico:")) {
+                                let textoLimpo = linha.replace(/.*Técnico:/, "").replace(/.*Suporte Técnico:/, "");
+                                adicionarBalao(textoLimpo, "tech");
+                            }
+                        });
+                    }
+                } catch (e) { console.log("Erro de sincronização."); }
+            }, 3000);
+        }
+    </script>
